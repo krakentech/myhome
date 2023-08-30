@@ -1,0 +1,88 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  BRANCH_PREFIX_RELEASE: release/
+  BRANCH_PREFIX_PROJECT: project/
+  BRANCH_PREFIX_ISSUE: issue/
+  BRANCH_PRODUCTION: main
+  TAG_PREFIX: v
+
+tasks:
+  release:
+    desc: Create a "{{.BRANCH_PREFIX_RELEASE}}" branch from "{{.BRANCH_PRODUCTION}}" or other "{{.BRANCH_PREFIX_RELEASE}}" branches
+    deps:
+      - task: :utils:validateCleanRepo
+      - task: :utils:validateRemote
+    vars:
+      NEW_VERSION:
+        sh: echo "$(if git describe --abbrev=0 --tags > /dev/null 2>&1; then git describe --abbrev=0 --tags; else echo ""; fi)" | awk -F. -v OFS=. 'NF==1{print ++$NF}; NF>1{$NF=sprintf("%0*d", length($NF), ($NF+1)); print}'
+    cmds:
+      - echo {{.NEW_VERSION}}
+      - task: checkPrefix
+        vars: { ALLOWED: "|{{.BRANCH_PRODUCTION}}/|{{.BRANCH_PREFIX_RELEASE}}|", BR_TYPE: "Release" }
+      - |
+        printf 'Set Release Number [{{.NEW_VERSION}}]: ' && read verNumber
+        verNumber="${verNumber:-{{.NEW_VERSION}}}"
+        [[ $verNumber != {{.TAG_PREFIX}}* ]] && verNumber="{{.TAG_PREFIX}}$verNumber"
+        nb={{.BRANCH_PREFIX_RELEASE}}$verNumber
+        git checkout -b $nb
+        git push -u origin $nb
+    silent: true
+
+  project:
+    desc: Create a "{{.BRANCH_PREFIX_PROJECT}}" branch from "{{.BRANCH_PREFIX_RELEASE}}", "{{.BRANCH_PREFIX_PROJECT}}", or "{{.BRANCH_PRODUCTION}}" branches
+    deps:
+      - task: :utils:validateCleanRepo
+      - task: :utils:validateRemote
+    cmds:
+      - task: checkPrefix
+        vars: { ALLOWED: "|{{.BRANCH_PRODUCTION}}/|{{.BRANCH_PREFIX_PROJECT}}|{{.BRANCH_PREFIX_RELEASE}}|", BR_TYPE: "Project" }
+      - |
+        printf 'Ticket Number [000]: ' && read TICKET_NUM
+        printf 'Ticket Description: ' && read TICKET_DESC
+        TICKET_DESC=$(echo "$TICKET_DESC" | awk '{print tolower($0)}')
+        nb={{.BRANCH_PREFIX_PROJECT}}$(printf "%03d\n" $(echo "${TICKET_NUM}" | sed 's/^0*//'))-${TICKET_DESC// /_}
+        git checkout -b $nb
+        git push -u origin $nb
+    silent: true
+
+  issue:
+    desc: Create a "{{.BRANCH_PREFIX_ISSUE}}" branch from a "{{.BRANCH_PREFIX_PROJECT}}", "{{.BRANCH_PREFIX_RELEASE}}", or  "{{.BRANCH_PRODUCTION}}" branch.
+    deps:
+      - task: :utils:validateCleanRepo
+      - task: :utils:validateRemote
+    cmds:
+      - task: checkPrefix
+        vars: { ALLOWED: "|{{.BRANCH_PRODUCTION}}/|{{.BRANCH_PREFIX_PROJECT}}|{{.BRANCH_PREFIX_RELEASE}}|", BR_TYPE: "Project" }
+      - |
+        printf 'Ticket Number [000]: ' && read TICKET_NUM
+        printf 'Ticket Description: ' && read TICKET_DESC
+        TICKET_DESC=$(echo "$TICKET_DESC" | awk '{print tolower($0)}')
+        nb={{.BRANCH_PREFIX_ISSUE}}$(printf "%03d\n" $(echo "${TICKET_NUM}" | sed 's/^0*//'))-${TICKET_DESC// /_}
+        git checkout -b $nb
+        git push -u origin $nb
+    silent: true
+
+  merged:
+    desc: List all the branches currently merged with current branch.
+    cmds:
+      - git branch -r --merged | grep -v 'origin/main'
+    silent: true
+
+  checkPrefix:
+    vars:
+      CUR_PREFIX:
+        sh: echo "$(git symbolic-ref --short -q HEAD | cut -d/ -f1)/"
+    cmds:
+      - |
+        string="{{.ALLOWED}}"
+        substring="{{.CUR_PREFIX}}"
+        if test "${string#*$substring}" == "$string"; then
+          printf "\nError (Improper base branch)\n\n"
+          printf "You can only create a '{{.BR_TYPE}}' branch from one of the following\n"
+          tmp="{{.ALLOWED}}"
+          printf '%s\n' "${tmp//|/$'\n'}"
+          exit 1; 
+        fi
+    silent: true

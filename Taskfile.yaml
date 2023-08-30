@@ -1,0 +1,19 @@
+# https://taskfile.dev
+version: '3'
+
+includes:
+  branch: ./.tasks/{{OS}}/branching.yml
+  utils:  ./.tasks/{{OS}}/utils.yml
+
+tasks:
+  setup:
+    desc: Setup the project for development
+    cmds:
+      - task: utils:confirmGit
+      - task: utils:installGitHooks
+    silent: true
+
+  default:
+    cmds:
+      - task -l
+    silent: true

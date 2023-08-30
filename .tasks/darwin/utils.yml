@@ -1,0 +1,38 @@
+# https://taskfile.dev
+version: '3'
+
+tasks:
+  validateCleanRepo:
+    vars:
+      MSG_DIRTY: Your current branch is dirty and so we can not continue.
+    deps:
+      - task: confirmGit
+    cmds:
+      - cmd:  git diff --quiet || (echo -e "\n{{.MSG_DIRTY}}\n"; exit 1;)
+    silent: true
+
+  validateRemote:
+    vars:
+      MSG_REMOTE_DIFF: Local and Remote are different please fix and try again
+    deps:
+      - task: confirmGit
+    cmds:
+      - cmd: git remote update && if [ $(git rev-parse HEAD) != $(git rev-parse @{u}) ]; then echo -e "\n{{.MSG_REMOTE_DIFF}}\n"; exit 1; fi
+    silent: true
+
+  installGitHooks:
+    dir: ./.git/hooks/
+    cmds:
+      - cmd: echo "Setup -> Git Hooks"
+      - cmd: git clone https://gist.github.com/f019a8bfddc00324b3fff1b39f8d9515.git prepare-commit-msg-repo
+      - cmd: cp ./prepare-commit-msg-repo/prepare-commit-msg ./prepare-commit-msg
+      - chmod +x "./prepare-commit-msg"
+      - cmd: rm -rf prepare-commit-msg-repo
+    silent: true
+
+  confirmGit:
+    vars:
+      MSG_NO_GIT: \nGIT is required for development on this app.\nAborting.\n
+    cmds:
+      - cmd: command -v git >/dev/null 2>&1 || { echo -e >&2 "{{ .MSG_NO_GIT }}"; exit 1; }
+    silent: true
